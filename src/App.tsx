@@ -12,28 +12,29 @@ export function App(){
  const [sales,setSales]=useState<Sale[]>(()=>JSON.parse(localStorage.getItem('rm_sales')||'[]'));const [cart,setCart]=useState<Item[]>([]);const [query,setQuery]=useState('');const [customer,setCustomer]=useState('Walk-in Customer');const [business,setBusiness]=useState(()=>JSON.parse(localStorage.getItem('rm_business')||'null')||{name:'My Business',phone:'+92 300 0000000',address:'Your business address'});
  const [menu,setMenu]=useState(false);const [editing,setEditing]=useState<Product|null>(null);const [payment,setPayment]=useState('Cash');const [discount,setDiscount]=useState(0);const [tip,setTip]=useState(0);
  const [voice,setVoice]=useState(false);const [heard,setHeard]=useState('');const recognition=useRef<any>(null);
- const speak=(text:string)=>{if('speechSynthesis'in window){window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.rate=.95;window.speechSynthesis.speak(u)}};
- const [voicePending,setVoicePending]=useState('');
+ const [voicePending/,setVoicePending]=useState('');
  const speak=(text:string)=>{if('speechSynthesis'in window){window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.rate=.92;u.pitch=1;window.speechSynthesis.speak(u)}};
  const normalizeVoice=(text:string)=>text.toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g,'').replace(/[,.!?;:]/g,' ').replace(/\\s+/g,' ').trim();
- const numberValue=(value?:string)=>{const words:any={zero:0,a:1,an:1,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,ek:1,aik:1,do:2,teen:3,chaar:4,paanch:5,chhe:6,che:6,saat:7,aath:8,nau:9,das:10};if(!value)return 1;return words[value.toLowerCase()]!==undefined?words[value.toLowerCase()]:Math.max(1,Number(value)||1)};
+ const numberValue=(value?:string)=>{const words:any={zero:0,a:1,an:1,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,fifty:50,hundred:100,ek:1,aik:1,do:2,teen:3,chaar:4,paanch:5,chhe:6,che:6,saat:7,aath:8,nau:9,das:10,gyaarah:11,barah:12,tera:13,chaudah:14,pandrah:15,bees:20,pachees:25};if(!value)return 1;const v=words[String(value).toLowerCase()];return v!==undefined?v:Math.max(1,Number(value)||1)};
  const tokenize=(s:string)=>normalizeVoice(s).split(' ').filter(Boolean);
  const distance=(a:string,b:string)=>{const prev=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){let cur=[i];for(let j=1;j<=b.length;j++)cur[j]=Math.min(cur[j-1]+1,prev[j]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));for(let j=0;j<=b.length;j++)prev[j]=cur[j]}return prev[b.length]};
+ const productAliases=(name:string)=>name.toLowerCase().replace(/burger/g,'').replace(/chicken biryani/g,'biryani').replace(/french fries/g,'fries').replace(/chicken roll/g,'roll').replace(/fresh lemonade/g,'lemonade').replace(/mineral water/g,'water').trim();
  const findProduct=(spoken:string)=>{
-   const stop=new Set(['please','could','you','can','would','will','add','get','give','me','put','include','i','want','need','make','that','some','of','the','to','for','and','then','also','a','an','item','items']);
-   const t=tokenize(spoken).filter(x=>!stop.has(x)); if(!t.length)return null;
+   const stop=new Set(['please','could','you','can','would','will','add','get','give','me','put','include','i','want','need','make','that','some','of','the','to','for','and','then','also','a','an','item','items','order','orders','for','me','one','two','three','four','five','six','seven','eight','nine','ten','ek','aik','do','teen','chaar','paanch','das']);
+   const raw=normalizeVoice(spoken),t=tokenize(raw).filter(x=>!stop.has(x)); if(!t.length)return null;
    let best:Product|null=null,bestScore=-Infinity;
-   products.forEach(p=>{const name=normalizeVoice(p.name), nt=tokenize(name);let score=0;
-     if(name===t.join(' '))score+=120;
-     if(name.includes(t.join(' '))||t.join(' ').includes(name))score+=70;
-     t.forEach(w=>{if(nt.includes(w))score+=25;else{const d=Math.min(...nt.map(n=>distance(w,n)));if(d<=1||(w.length>5&&d<=2))score+=12}});
+   products.forEach(p=>{const name=normalizeVoice(p.name), alias=productAliases(name), nt=tokenize(name), at=tokenize(alias);let score=0, phrase=t.join(' ');
+     if(name===phrase)score+=150;if(name.includes(phrase)||phrase.includes(name))score+=90;if(alias===phrase||alias.includes(phrase)||phrase.includes(alias))score+=80;
+     t.forEach(w=>{if(nt.includes(w)||at.includes(w))score+=35;else{const d=Math.min(...nt.concat(at).map(n=>distance(w,n)));if(d<=1||(w.length>5&&d<=2))score+=15}});
      if(score>bestScore){bestScore=score;best=p}
    });
-   return bestScore>=25?best:null;
+   return bestScore>=30?best:null;
  };
- const splitVoiceCommands=(q:string)=>q.split(/\\s+(?:and then|then|and)\\s+/i).map(x=>x.trim()).filter(Boolean);
+ const splitVoiceCommands=(q:string)=>q.split(/\\s+(?:and then|then|after that|also|and)\\s+/i).map(x=>x.trim()).filter(Boolean);
+ const extractQuantity=(text:string)=>{const m=normalizeVoice(text).match(/\\b(\\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|ek|aik|do|teen|chaar|paanch|das)\\b/);return m?numberValue(m[1]):1};
  const executeVoice=(raw:string)=>{
    const original=raw.trim(),q=normalizeVoice(original);setHeard(original);if(!q)return;
+   const navigate=(words:string[],target:string,label:string)=>{if(words.some(w=>q.includes(w))){setTab(target);speak(label);return true}return false};
    const yes=/\\b(yes|yeah|yep|confirm|confirmed|do it|go ahead|proceed|haan|han|theek|karo)\\b/i.test(q);
    const no=/\\b(no|nope|cancel|stop|dont|don't|nahi|nahin|mat karo)\\b/i.test(q);
    if(voicePending){if(yes){const action=voicePending;setVoicePending('');if(action==='complete'){complete();speak('Sale completed')}return}if(no){setVoicePending('');speak('Cancelled');return}}
@@ -53,9 +54,9 @@ export function App(){
    const disc=q.match(/\\b(?:discount|off)\\s*(?:to|of|is|by)?\\s*(\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|fifty|ek|aik|do|teen|chaar|paanch|das)\\s*%?/);if(disc){const n=numberValue(disc[1]);setDiscount(Math.min(100,n));setTab('pos');speak(n+' percent discount set');return}
    const tipm=q.match(/\\btip\\s*(?:to|of|is|by)?\\s*(\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|ek|aik|do|teen|das)\\s*%?/);if(tipm){const n=numberValue(tipm[1]);setTip(Math.min(100,n));setTab('pos');speak(n+' percent tip set');return}
    const remove=q.match(/\\b(?:remove|delete|take off|take away|minus|hatao|nikal)\\s*(?:(\\d+|one|two|three|four|five|six|seven|eight|nine|ten|ek|aik|do|teen|chaar|paanch|das)\\s+)?(?:of\\s+)?(.+)/);if(remove){const n=numberValue(remove[1]),p=findProduct(remove[2]);if(p){setCart((cc:Item[])=>cc.flatMap(x=>x.id===p!.id?(x.qty>n?[{...x,qty:x.qty-n}]:[]):[x]));speak((n>1?n+' ':'')+p.name+' removed');return}}
-   const addPatterns=[/^(?:please\\s+)?(?:add|get|give me|put|include|i want|i need|make it|also)\\s*(?:(\\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|ek|aik|do|teen|chaar|paanch|das)\\s+)?(?:of\\s+)?(.+?)(?:\\s+please)?$/i,/^(?:(\\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|ek|aik|do|teen|chaar|paanch|das)\\s+)(.+)$/i];
+   const addPatterns=[/^(?:please\\s+)?(?:add|get|give me|put|include|i want|i need|make it|bring|order|lao|do|de do)\\s*(?:(\\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|ek|aik|do|teen|chaar|paanch|das)\\s+)?(?:of\\s+)?(.+?)(?:\\s+please)?$/i,/^(?:(\\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|ek|aik|do|teen|chaar|paanch|das)\\s+)(.+)$/i];
    for(const pattern of addPatterns){const m=q.match(pattern);if(m){const n=numberValue(m[1]),p=findProduct(m[2]);if(p){for(let i=0;i<n;i++)add(p);setTab('pos');speak(n+' '+p.name+' added');return}}}
-   const bare=findProduct(q);if(bare){add(bare);setTab('pos');speak(bare.name+' added');return}
+   const bare=findProduct(q);if(bare){const n=extractQuantity(q);for(let i=0;i<n;i++)add(bare);setTab('pos');speak(n+' '+bare.name+' added');return}
    speak('I heard '+original+', but I could not match that command. Try adding an item, changing payment, setting a discount, opening a section, or saying confirm.');
  };
  const runVoice=(raw:string)=>{splitVoiceCommands(normalizeVoice(raw)).forEach((part,i)=>{window.setTimeout(()=>executeVoice(part),i*120)})};
