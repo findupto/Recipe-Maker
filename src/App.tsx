@@ -13,38 +13,54 @@ export function App(){
  const [menu,setMenu]=useState(false);const [editing,setEditing]=useState<Product|null>(null);const [payment,setPayment]=useState('Cash');const [discount,setDiscount]=useState(0);const [tip,setTip]=useState(0);
  const [voice,setVoice]=useState(false);const [heard,setHeard]=useState('');const recognition=useRef<any>(null);
  const speak=(text:string)=>{if('speechSynthesis'in window){window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.rate=.95;window.speechSynthesis.speak(u)}};
+ const [voicePending,setVoicePending]=useState('');
+ const speak=(text:string)=>{if('speechSynthesis'in window){window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.rate=.92;u.pitch=1;window.speechSynthesis.speak(u)}};
  const normalizeVoice=(text:string)=>text.toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g,'').replace(/[,.!?;:]/g,' ').replace(/\\s+/g,' ').trim();
- const parseNumber=(value?:string)=>{if(!value)return 1;const words:any={zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,'a':1,'an':1};const n=words[value.toLowerCase()];return n!==undefined?n:(Number(value)||1)};
- const runVoice=(raw:string)=>{
-  const original=raw.trim();const q=normalizeVoice(original);setHeard(original);if(!q)return;
-  const aliases:any={biryani:['biryani','biriyani','biryani rice'],burger:['burger','burgers','hamburger'],fries:['fries','french fries','chips'],roll:['roll','chicken roll'],lemonade:['lemonade','lemon drink'],water:['water','mineral water'],cash:['cash'],card:['card','credit card','debit card'],transfer:['bank transfer','transfer'],wallet:['wallet','mobile wallet','easypaisa','jazzcash']};
-  const find=(text:string)=>{
-   const t=normalizeVoice(text).replace(/\\b(please|could you|can you|would you|add|remove|delete|take|put|give|me|of|the|to|my|a|an|some|for)\\b/g,' ').replace(/\\s+/g,' ').trim();if(!t)return null;
-   let best:any=null,score=0;products.forEach(p=>{const name=normalizeVoice(p.name);let s=0;if(name===t)s=100;else if(t.includes(name)||name.includes(t))s=80;const words=t.split(' ');words.forEach(w=>{if(name.split(' ').includes(w))s+=15;else if(name.split(' ').some(x=>x.startsWith(w)||w.startsWith(x)))s+=8;Object.values(aliases).forEach((arr:any)=>{if(arr.includes(w)&&arr.some((a:string)=>name.includes(a)))s+=10})});if(s>score){score=s;best=p}});return score>=15?best:null;
-  };
-  const speakAnd=(msg:string)=>{speak(msg);setHeard(original)};
-  if(/\\b(clear|empty|reset|cancel)\\b.*\\b(cart|basket|receipt|order|bill)\\b|\\b(remove everything|start fresh)\\b/.test(q)){setCart([]);setDiscount(0);setTip(0);speakAnd('The current order is cleared');return}
-  if(/\\b(new|start|create|begin|fresh)\\b.*\\b(sale|receipt|order|bill)\\b|\\bstart over\\b/.test(q)){setCart([]);setCustomer('Walk-in Customer');setDiscount(0);setTip(0);setPayment('Cash');setTab('pos');speakAnd('A new sale is ready');return}
-  if(/\\b(undo|go back|back)\\b/.test(q)){setTab('dashboard');speakAnd('Going back to the overview');return}
-  if(/\\b(open|show|view|go to|take me to|switch to)\\b.*\\b(analytics|insights|reports?)\\b/.test(q)){setTab('analytics');speakAnd('Analytics opened');return}
-  if(/\\b(open|show|view|go to|take me to|switch to)\\b.*\\b(products?|catalog|menu)\\b/.test(q)){setTab('products');speakAnd('Products opened');return}
-  if(/\\b(open|show|view|go to|take me to|switch to)\\b.*\\b(history|sales|receipts)\\b/.test(q)){setTab('history');speakAnd('Sales history opened');return}
-  if(/\\b(open|show|view|go to|take me to|switch to)\\b.*\\b(dashboard|home|overview)\\b/.test(q)){setTab('dashboard');speakAnd('Dashboard opened');return}
-  if(/\\b(open|show|view|go to|take me to|switch to)\\b.*\\b(business|settings|profile)\\b/.test(q)){setTab('settings');speakAnd('Business settings opened');return}
-  const cust=original.match(/(?:customer|client|customer name|client name)\\s*(?:is|called|named|for)?\\s+(.+)/i);if(cust){setCustomer(cust[1].trim());setTab('pos');speakAnd('Customer set to '+cust[1].trim());return}
-  const pay=q.match(/\\b(cash|card|credit card|debit card|bank transfer|transfer|mobile wallet|wallet|easypaisa|jazzcash)\\b/);if(pay){const x=pay[1],value=/cash/.test(x)?'Cash':/card/.test(x)?'Card':/bank|transfer/.test(x)?'Bank Transfer':'Mobile Wallet';setPayment(value);setTab('pos');speakAnd(value+' payment selected');return}
-  const percent=(word?:string)=>parseNumber(word);
-  const disc=q.match(/\\b(?:discount|off)\\s*(?:to|of|is|by)?\\s*(\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|fifty)\\s*%?/);if(disc){const n=percent(disc[1]);setDiscount(Math.min(100,n));setTab('pos');speakAnd(n+' percent discount set');return}
-  const tipm=q.match(/\\btip\\s*(?:to|of|is|by)?\\s*(\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten)\\s*%?/);if(tipm){const n=percent(tipm[1]);setTip(Math.min(100,n));setTab('pos');speakAnd(n+' percent tip set');return}
-  const remove=q.match(/\\b(?:remove|delete|take off|take away)\\s+(?:(\\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\\s+)?(?:of\\s+)?(.+)/);if(remove){const n=parseNumber(remove[1]),p=find(remove[2]);if(p){setCart((cc:any)=>cc.flatMap((x:any)=>x.id===p.id?(x.qty>n?[{...x,qty:x.qty-n}]:[]):[x]));speakAnd((n>1?n+' ':'')+p.name+' removed');return}}
-  const addMatch=q.match(/^(?:please\\s+)?(?:add|give me|put|include|i want|i need|make it|make that|also)\\s*(?:(\\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\\s+)?(?:of\\s+)?(.+?)(?:\\s+please)?$/);
-  if(addMatch){const n=parseNumber(addMatch[1]),p=find(addMatch[2]);if(p){for(let i=0;i<n;i++)add(p);setTab('pos');speakAnd(n+' '+p.name+' added');return}}
-  const bare=find(q);if(bare){add(bare);setTab('pos');speakAnd(bare.name+' added');return}
-  const qtyFirst=q.match(/^(?:(\\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\\s+)(.+)$/);if(qtyFirst){const p=find(qtyFirst[2]);if(p){const n=parseNumber(qtyFirst[1]);for(let i=0;i<n;i++)add(p);setTab('pos');speakAnd(n+' '+p.name+' added');return}}
-  speakAnd('I heard '+original+', but I could not match it. You can say add two biryani, remove a burger, set discount ten percent, choose cash, open analytics, or complete the sale.');
+ const numberValue=(value?:string)=>{const words:any={zero:0,a:1,an:1,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,ek:1,aik:1,do:2,teen:3,chaar:4,paanch:5,chhe:6,che:6,saat:7,aath:8,nau:9,das:10};if(!value)return 1;return words[value.toLowerCase()]!==undefined?words[value.toLowerCase()]:Math.max(1,Number(value)||1)};
+ const tokenize=(s:string)=>normalizeVoice(s).split(' ').filter(Boolean);
+ const distance=(a:string,b:string)=>{const prev=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){let cur=[i];for(let j=1;j<=b.length;j++)cur[j]=Math.min(cur[j-1]+1,prev[j]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));for(let j=0;j<=b.length;j++)prev[j]=cur[j]}return prev[b.length]};
+ const findProduct=(spoken:string)=>{
+   const stop=new Set(['please','could','you','can','would','will','add','get','give','me','put','include','i','want','need','make','that','some','of','the','to','for','and','then','also','a','an','item','items']);
+   const t=tokenize(spoken).filter(x=>!stop.has(x)); if(!t.length)return null;
+   let best:Product|null=null,bestScore=-Infinity;
+   products.forEach(p=>{const name=normalizeVoice(p.name), nt=tokenize(name);let score=0;
+     if(name===t.join(' '))score+=120;
+     if(name.includes(t.join(' '))||t.join(' ').includes(name))score+=70;
+     t.forEach(w=>{if(nt.includes(w))score+=25;else{const d=Math.min(...nt.map(n=>distance(w,n)));if(d<=1||(w.length>5&&d<=2))score+=12}});
+     if(score>bestScore){bestScore=score;best=p}
+   });
+   return bestScore>=25?best:null;
  };
- useEffect(()=>{const SR=(window as any).SpeechRecognition||(window as any).webkitSpeechRecognition;if(!SR)return;const r=new SR();r.continuous=true;r.interimResults=true;r.maxAlternatives=3;r.lang=navigator.language||'en-US';r.onresult=(e:any)=>{let final='';for(let i=e.resultIndex;i<e.results.length;i++){const result=e.results[i];if(result.isFinal)final+=result[0].transcript}if(final)runVoice(final)};r.onend=()=>{if(voice)try{r.start()}catch{}};r.onerror=(e:any)=>{if(e.error!=='no-speech'&&e.error!=='aborted')setHeard('Voice error: '+e.error)};recognition.current=r;return()=>{try{r.stop()}catch{}}},[voice,products,cart,sales]);
- const toggleVoice=()=>{const r=recognition.current;if(!r){speak('Voice commands are not supported in this browser');return}if(voice){setVoice(false);try{r.stop()}catch{};speak('Voice control off')}else{setVoice(true);setHeard('Listening...');try{r.start()}catch{};speak('Voice control on. Tell me what to do.')}};
+ const splitVoiceCommands=(q:string)=>q.split(/\\s+(?:and then|then|and)\\s+/i).map(x=>x.trim()).filter(Boolean);
+ const executeVoice=(raw:string)=>{
+   const original=raw.trim(),q=normalizeVoice(original);setHeard(original);if(!q)return;
+   const yes=/\\b(yes|yeah|yep|confirm|confirmed|do it|go ahead|proceed|haan|han|theek|karo)\\b/i.test(q);
+   const no=/\\b(no|nope|cancel|stop|dont|don't|nahi|nahin|mat karo)\\b/i.test(q);
+   if(voicePending){if(yes){const action=voicePending;setVoicePending('');if(action==='complete'){complete();speak('Sale completed')}return}if(no){setVoicePending('');speak('Cancelled');return}}
+   if(/\\b(complete|checkout|finish|finalize|close|submit)\\b.*\\b(sale|order|bill|receipt)\\b|\\b(bill|sale|order)\\b.*\\b(complete|checkout|finish|finalize)\\b|\\bpay now\\b/.test(q)){
+     if(!cart.length){speak('The order is empty');return}setVoicePending('complete');speak('The order is ready. Say confirm to complete the sale.');return;
+   }
+   if(/\\b(clear|empty|reset|cancel)\\b.*\\b(cart|basket|receipt|order|bill)\\b|\\b(remove everything|start fresh)\\b/.test(q)){setCart([]);setDiscount(0);setTip(0);speak('The current order is cleared');return}
+   if(/\\b(new|start|create|begin|fresh)\\b.*\\b(sale|receipt|order|bill)\\b|\\bstart over\\b/.test(q)){setCart([]);setCustomer('Walk-in Customer');setDiscount(0);setTip(0);setPayment('Cash');setTab('pos');speak('A new sale is ready');return}
+   if(/\\b(open|show|view|go to|take me to|switch to)\\b.*\\b(analytics|insights|reports?)\\b/.test(q)){setTab('analytics');speak('Analytics opened');return}
+   if(/\\b(open|show|view|go to|take me to|switch to)\\b.*\\b(products?|catalog|menu)\\b/.test(q)){setTab('products');speak('Products opened');return}
+   if(/\\b(open|show|view|go to|take me to|switch to)\\b.*\\b(history|sales|receipts)\\b/.test(q)){setTab('history');speak('Sales history opened');return}
+   if(/\\b(open|show|view|go to|take me to|switch to)\\b.*\\b(dashboard|home|overview)\\b/.test(q)){setTab('dashboard');speak('Dashboard opened');return}
+   if(/\\b(open|show|view|go to|take me to|switch to)\\b.*\\b(business|settings|profile)\\b/.test(q)){setTab('settings');speak('Business settings opened');return}
+   if(/\\b(back|go back|undo)\\b/.test(q)){setTab('dashboard');speak('Going back');return}
+   const cust=original.match(/(?:customer|client|customer name|client name)\\s*(?:is|called|named|for)?\\s+(.+)/i);if(cust){setCustomer(cust[1].trim());setTab('pos');speak('Customer set to '+cust[1].trim());return}
+   const pay=q.match(/\\b(cash|card|credit card|debit card|bank transfer|transfer|mobile wallet|wallet|easypaisa|jazzcash)\\b/);if(pay){const x=pay[1],value=/cash/.test(x)?'Cash':/card/.test(x)?'Card':/bank|transfer/.test(x)?'Bank Transfer':'Mobile Wallet';setPayment(value);setTab('pos');speak(value+' payment selected');return}
+   const disc=q.match(/\\b(?:discount|off)\\s*(?:to|of|is|by)?\\s*(\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|fifty|ek|aik|do|teen|chaar|paanch|das)\\s*%?/);if(disc){const n=numberValue(disc[1]);setDiscount(Math.min(100,n));setTab('pos');speak(n+' percent discount set');return}
+   const tipm=q.match(/\\btip\\s*(?:to|of|is|by)?\\s*(\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|ek|aik|do|teen|das)\\s*%?/);if(tipm){const n=numberValue(tipm[1]);setTip(Math.min(100,n));setTab('pos');speak(n+' percent tip set');return}
+   const remove=q.match(/\\b(?:remove|delete|take off|take away|minus|hatao|nikal)\\s*(?:(\\d+|one|two|three|four|five|six|seven|eight|nine|ten|ek|aik|do|teen|chaar|paanch|das)\\s+)?(?:of\\s+)?(.+)/);if(remove){const n=numberValue(remove[1]),p=findProduct(remove[2]);if(p){setCart((cc:Item[])=>cc.flatMap(x=>x.id===p!.id?(x.qty>n?[{...x,qty:x.qty-n}]:[]):[x]));speak((n>1?n+' ':'')+p.name+' removed');return}}
+   const addPatterns=[/^(?:please\\s+)?(?:add|get|give me|put|include|i want|i need|make it|also)\\s*(?:(\\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|ek|aik|do|teen|chaar|paanch|das)\\s+)?(?:of\\s+)?(.+?)(?:\\s+please)?$/i,/^(?:(\\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|ek|aik|do|teen|chaar|paanch|das)\\s+)(.+)$/i];
+   for(const pattern of addPatterns){const m=q.match(pattern);if(m){const n=numberValue(m[1]),p=findProduct(m[2]);if(p){for(let i=0;i<n;i++)add(p);setTab('pos');speak(n+' '+p.name+' added');return}}}
+   const bare=findProduct(q);if(bare){add(bare);setTab('pos');speak(bare.name+' added');return}
+   speak('I heard '+original+', but I could not match that command. Try adding an item, changing payment, setting a discount, opening a section, or saying confirm.');
+ };
+ const runVoice=(raw:string)=>{splitVoiceCommands(normalizeVoice(raw)).forEach((part,i)=>{window.setTimeout(()=>executeVoice(part),i*120)})};
+ useEffect(()=>{const SR=(window as any).SpeechRecognition||(window as any).webkitSpeechRecognition;if(!SR)return;const r=new SR();r.continuous=true;r.interimResults=true;r.maxAlternatives=5;r.lang=/^ur/i.test(navigator.language)?'ur-PK':(navigator.language||'en-US');r.onresult=(e:any)=>{let final='';for(let i=e.resultIndex;i<e.results.length;i++){const result=e.results[i];if(result.isFinal)final+=result[0].transcript}if(final)runVoice(final)};r.onend=()=>{if(voice)try{r.start()}catch{}};r.onerror=(e:any)=>{if(e.error!=='no-speech'&&e.error!=='aborted')setHeard('Voice error: '+e.error)};recognition.current=r;return()=>{try{r.stop()}catch{}}},[voice,products]);
+ const toggleVoice=()=>{const r=recognition.current;if(!r){speak('Voice commands are not supported in this browser');return}if(voice){setVoice(false);try{r.stop()}catch{};setVoicePending('');speak('Voice control off')}else{setVoice(true);setHeard('Listening...');try{r.start()}catch{};speak('Voice control on. Tell me what to do.')};
  const save=(p:Product[])=>{setProducts(p);localStorage.setItem('rm_products',JSON.stringify(p))};
  const add=(p:Product)=>setCart(c=>{const x=c.find(i=>i.id===p.id);return x?c.map(i=>i.id===p.id?{...i,qty:i.qty+1}:i):[...c,{...p,qty:1}]});
  const subtotal=useMemo(()=>cart.reduce((s,i)=>s+i.price*i.qty,0),[cart]);const discountAmount=subtotal*discount/100;const taxable=Math.max(0,subtotal-discountAmount);const tax=taxable*.05;const tipAmount=taxable*tip/100;const total=taxable+tax+tipAmount;
