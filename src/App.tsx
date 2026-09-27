@@ -52,7 +52,12 @@ export function App(){
 }
 
 function Dashboard({sales,products,money,onNew}:{sales:Sale[];products:Product[];money:(n:number)=>string;onNew:()=>void}){
- const revenue=sales.reduce((s,x)=>s+x.total,0);return <section className="page">
+ const revenue=sales.reduce((s,x)=>s+x.total,0);
+ const top=[...sales.flatMap(s=>s.items)].reduce((a:any,i:any)=>(a[i.name]=(a[i.name]||0)+i.qty,a),{});
+ const topItems=Object.entries(top).sort((a:any,b:any)=>b[1]-a[1]).slice(0,4);
+ const low=products.filter(p=>(p.stock??0)<=5);
+
+ return <section className="page">
   <div className="hero"><div><span className="eyebrow">TODAY'S WORKSPACE</span><h2>Sell smarter, <i>look professional.</i></h2><p>Create polished receipts in seconds and keep every sale organized.</p><button className="primary" onClick={onNew}><Plus size={18}/> Create new receipt</button></div><div className="hero-card"><ReceiptText size={30}/><b>Ready to print</b><span>58mm · 80mm · PDF</span></div></div>
   <div className="stats"><Stat icon={TrendingUp} label="Total revenue" value={money(revenue)} sub={sales.length+' receipts'}/><Stat icon={ShoppingBag} label="Sales" value={String(sales.length)} sub="All time"/><Stat icon={Package} label="Products" value={String(products.length)} sub="In catalog"/><Stat icon={Wallet} label="Avg. ticket" value={money(sales.length?revenue/sales.length:0)} sub="Per receipt"/></div>
   <div className="section-title"><div><h3>Recent sales</h3><p>Your latest transactions at a glance.</p></div><button className="ghost" onClick={onNew}>New receipt <ChevronRight size={16}/></button></div>
