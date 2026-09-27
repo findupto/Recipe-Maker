@@ -14,19 +14,27 @@ export function App(){
  const [voice,setVoice]=useState(false);const [heard,setHeard]=useState('');const recognition=useRef<any>(null);
  const speak=(text:string)=>{if('speechSynthesis'in window){window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.rate=.95;window.speechSynthesis.speak(u)}};
  const runVoice=(raw:string)=>{
-  const q=raw.toLowerCase().trim();setHeard(raw);
-  if(!q)return;
-  if(/\b(clear|empty|delete)\b.*\b(cart|basket|receipt)\b/.test(q)){setCart([]);speak('Receipt cleared');return}
-  if(/\b(new|start|create)\b.*\b(sale|receipt|order)\b/.test(q)){setCart([]);setTab('pos');speak('New sale ready');return}
-  if(/\b(check.?out|complete|finish|pay|done)\b/.test(q)){if(cart.length){complete();speak('Sale completed')}else speak('The receipt is empty');return}
-  if(/\b(show|open|go to|view)\b.*\b(product|catalog)\b/.test(q)){setTab('products');speak('Products opened');return}
-  if(/\b(show|open|go to|view)\b.*\b(history|sales)\b/.test(q)){setTab('history');speak('Sales history opened');return}
-  if(/\b(show|open|go to|view)\b.*\b(dashboard|home|overview)\b/.test(q)){setTab('dashboard');speak('Dashboard opened');return}
-  if(/\b(customer)\b/.test(q)){const m=raw.match(/customer(?: is| name is|:)?\\s+(.+)/i);if(m){setCustomer(m[1].trim());setTab('pos');speak('Customer set to '+m[1].trim());return}}
-  const remove=/\b(remove|delete)\\s+(?:one|1)\\s+(.+)/i.exec(raw);if(remove){const p=products.find(x=>x.name.toLowerCase().includes(remove[2].toLowerCase()));if(p){setCart((cc:any)=>cc.flatMap((x:any)=>x.id===p.id?(x.qty>1?[{...x,qty:x.qty-1}]:[]):[x]));speak('Removed one '+p.name);return}}
-  const addm=/\badd\\s+(?:(\\d+)\\s+)?(.+)/i.exec(raw);if(addm){const qty=Number(addm[1]||1),term=addm[2].replace(/\\b(to|the|my)\\b/gi,'').trim();const p=products.find(x=>x.name.toLowerCase()===term.toLowerCase())||products.find(x=>x.name.toLowerCase().includes(term.toLowerCase()));if(p){for(let i=0;i<qty;i++)add(p);setTab('pos');speak(qty+' '+p.name+' added');return}}
-  const matched=products.find(x=>q.includes(x.name.toLowerCase()));if(matched){add(matched);setTab('pos');speak(matched.name+' added');return}
-  speak('I heard '+raw+'. Try add a product, remove an item, clear cart, new sale, or complete sale.');
+  const original=raw.trim(),q=original.toLowerCase().replace(/[,.!?]/g,' ').replace(/\s+/g,' ').trim();setHeard(original);if(!q)return;
+  const nums:any={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10};
+  const find=(text:string)=>{const t=text.toLowerCase().replace(/\b(please|add|remove|delete|of|the|to|my|a|an)\b/g,' ').replace(/\s+/g,' ').trim();if(!t)return null;const exact=products.find(p=>p.name.toLowerCase()===t);if(exact)return exact;const inc=products.find(p=>t.includes(p.name.toLowerCase())||p.name.toLowerCase().includes(t));if(inc)return inc;let best:any=null,score=0;products.forEach(p=>{const s=t.split(' ').reduce((n,w)=>n+(p.name.toLowerCase().split(' ').some(x=>x===w)?3:p.name.toLowerCase().split(' ').some(x=>x.startsWith(w)||w.startsWith(x))?2:0),0);if(s>score){score=s;best=p}});return score>=2?best:null};
+  const qtyOf=(x?:string)=>x?(nums[x]||Number(x)||1):1;
+  if(/\b(clear|empty|reset)\b.*\b(cart|basket|receipt|order)\b/.test(q)){setCart([]);speak('Current receipt cleared');return}
+  if(/\b(new|start|create|begin)\b.*\b(sale|receipt|order|bill)\b|\bstart over\b/.test(q)){setCart([]);setCustomer('Walk-in Customer');setDiscount(0);setTip(0);setPayment('Cash');setTab('pos');speak('New sale is ready');return}
+  if(/\b(check.?out|complete|finish|close|pay|done|submit)\b/.test(q)){if(cart.length){complete();speak('Sale completed')}else speak('The receipt is empty');return}
+  if(/\b(open|show|view|go to|take me to)\b.*\b(analytics|insights|reports?)\b/.test(q)){setTab('analytics');speak('Analytics opened');return}
+  if(/\b(open|show|view|go to|take me to)\b.*\b(products?|catalog|menu)\b/.test(q)){setTab('products');speak('Products opened');return}
+  if(/\b(open|show|view|go to|take me to)\b.*\b(history|sales|receipts)\b/.test(q)){setTab('history');speak('Sales history opened');return}
+  if(/\b(open|show|view|go to|take me to)\b.*\b(dashboard|home|overview)\b/.test(q)){setTab('dashboard');speak('Dashboard opened');return}
+  if(/\b(open|show|view|go to|take me to)\b.*\b(business|settings|profile)\b/.test(q)){setTab('settings');speak('Business settings opened');return}
+  const cust=original.match(/(?:customer|client)(?:\s+name)?(?:\s+is|\s*:)?\s+(.+)/i);if(cust){setCustomer(cust[1].trim());setTab('pos');speak('Customer set to '+cust[1].trim());return}
+  const pay=q.match(/\b(cash|card|credit card|debit card|bank transfer|transfer|mobile wallet|wallet|easypaisa|jazzcash)\b/);if(pay){const x=pay[1],value=/cash/.test(x)?'Cash':/card/.test(x)?'Card':/bank|transfer/.test(x)?'Bank Transfer':'Mobile Wallet';setPayment(value);setTab('pos');speak(value+' payment selected');return}
+  const disc=q.match(/\b(?:discount|off)\s*(?:to|of|is)?\s*(\d+)\s*%?/);if(disc){const n=Math.min(100,Math.max(0,Number(disc[1])));setDiscount(n);setTab('pos');speak(n+' percent discount set');return}
+  const tip=q.match(/\btip\s*(?:to|of|is)?\s*(\d+)\s*%?/);if(tip){const n=Math.min(100,Math.max(0,Number(tip[1])));setTip(n);setTab('pos');speak(n+' percent tip set');return}
+  const rem=q.match(/\b(?:remove|delete|take off|take away)\b\s*(?:(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+)?(?:of\s+)?(.+)/);if(rem){const n=qtyOf(rem[1]),p=find(rem[2]);if(p){setCart((cc:any)=>cc.flatMap((x:any)=>x.id===p.id?(x.qty>n?[{...x,qty:x.qty-n}]:[]):[x]));speak((n>1?n+' ':'')+p.name+' removed');return}}
+  const addm=q.match(/^(?:please\s+)?(?:add|give me|put|include|i want|make it|make that)\s*(?:(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+)?(?:of\s+)?(.+?)(?:\s+please)?$/);if(addm){const n=qtyOf(addm[1]),p=find(addm[2]);if(p){for(let i=0;i<n;i++)add(p);setTab('pos');speak(n+' '+p.name+' added');return}}
+  const bare=find(q);if(bare){add(bare);setTab('pos');speak(bare.name+' added');return}
+  const m=q.match(/^(?:(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+)?(.+)$/);if(m){const p=find(m[2]);if(p){const n=qtyOf(m[1]);for(let i=0;i<n;i++)add(p);setTab('pos');speak(n+' '+p.name+' added');return}}
+  speak('I did not understand. Try add two biryani, remove one burger, set discount ten percent, choose cash or card, open analytics, or complete sale.');
  };
  useEffect(()=>{const SR=(window as any).SpeechRecognition||(window as any).webkitSpeechRecognition;if(!SR)return;const r=new SR();r.continuous=true;r.interimResults=true;r.lang=navigator.language||'en-US';r.onresult=(e:any)=>{let final='';for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)final+=e.results[i][0].transcript;if(final)runVoice(final)};r.onend=()=>{if(voice)try{r.start()}catch{}};r.onerror=()=>{};recognition.current=r;return()=>{try{r.stop()}catch{}}},[voice,products,cart,sales]);
  const toggleVoice=()=>{const r=recognition.current;if(!r){speak('Voice commands are not supported in this browser');return}if(voice){setVoice(false);try{r.stop()}catch{};speak('Voice control off')}else{setVoice(true);try{r.start()}catch{};speak('Voice control on')}};
