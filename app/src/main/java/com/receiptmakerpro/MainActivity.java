@@ -53,11 +53,6 @@ public class MainActivity extends Activity {
                 return assetLoader.shouldInterceptRequest(android.net.Uri.parse(url));
             }
 
-            @Override
-            public void onReceivedError(WebView view, WebResourceRequest request,
-                                        android.webkit.WebResourceError error) {
-                super.onReceivedError(view, request, error);
-            }
         });
 
         web.setWebChromeClient(new WebChromeClient() {
