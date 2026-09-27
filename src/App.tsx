@@ -1,4 +1,4 @@
-import React,{useMemo,useState}from'react';import{LayoutDashboard,ReceiptText,Package,History,Settings,Plus,Minus,Trash2,Printer,Download,Search,Store,ChevronRight,TrendingUp,ShoppingBag,Wallet,Menu,X,Check,Edit3}from'lucide-react';
+import React,{useMemo,useState,useEffect,useRef}from'react';import{LayoutDashboard,ReceiptText,Package,History,Settings,Plus,Minus,Trash2,Printer,Download,Search,Store,ChevronRight,TrendingUp,ShoppingBag,Wallet,Menu,X,Check,Edit3,Mic,MicOff,Volume2}from'lucide-react';
 
 type Product={id:string;name:string;price:number;category:string};
 type Item={id:string;name:string;price:number;qty:number};
@@ -11,6 +11,25 @@ export function App(){
  const [tab,setTab]=useState('dashboard');const [products,setProducts]=useState<Product[]>(()=>JSON.parse(localStorage.getItem('rm_products')||'null')||seed);
  const [sales,setSales]=useState<Sale[]>(()=>JSON.parse(localStorage.getItem('rm_sales')||'[]'));const [cart,setCart]=useState<Item[]>([]);const [query,setQuery]=useState('');const [customer,setCustomer]=useState('Walk-in Customer');const [business,setBusiness]=useState(()=>JSON.parse(localStorage.getItem('rm_business')||'null')||{name:'My Business',phone:'+92 300 0000000',address:'Your business address'});
  const [menu,setMenu]=useState(false);const [editing,setEditing]=useState<Product|null>(null);
+ const [voice,setVoice]=useState(false);const [heard,setHeard]=useState('');const recognition=useRef<any>(null);
+ const speak=(text:string)=>{if('speechSynthesis'in window){window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.rate=.95;window.speechSynthesis.speak(u)}};
+ const runVoice=(raw:string)=>{
+  const q=raw.toLowerCase().trim();setHeard(raw);
+  if(!q)return;
+  if(/\b(clear|empty|delete)\b.*\b(cart|basket|receipt)\b/.test(q)){setCart([]);speak('Receipt cleared');return}
+  if(/\b(new|start|create)\b.*\b(sale|receipt|order)\b/.test(q)){setCart([]);setTab('pos');speak('New sale ready');return}
+  if(/\b(check.?out|complete|finish|pay|done)\b/.test(q)){if(cart.length){complete();speak('Sale completed')}else speak('The receipt is empty');return}
+  if(/\b(show|open|go to|view)\b.*\b(product|catalog)\b/.test(q)){setTab('products');speak('Products opened');return}
+  if(/\b(show|open|go to|view)\b.*\b(history|sales)\b/.test(q)){setTab('history');speak('Sales history opened');return}
+  if(/\b(show|open|go to|view)\b.*\b(dashboard|home|overview)\b/.test(q)){setTab('dashboard');speak('Dashboard opened');return}
+  if(/\b(customer)\b/.test(q)){const m=raw.match(/customer(?: is| name is|:)?\\s+(.+)/i);if(m){setCustomer(m[1].trim());setTab('pos');speak('Customer set to '+m[1].trim());return}}
+  const remove=/\b(remove|delete)\\s+(?:one|1)\\s+(.+)/i.exec(raw);if(remove){const p=products.find(x=>x.name.toLowerCase().includes(remove[2].toLowerCase()));if(p){setCart((cc:any)=>cc.flatMap((x:any)=>x.id===p.id?(x.qty>1?[{...x,qty:x.qty-1}]:[]):[x]));speak('Removed one '+p.name);return}}
+  const addm=/\badd\\s+(?:(\\d+)\\s+)?(.+)/i.exec(raw);if(addm){const qty=Number(addm[1]||1),term=addm[2].replace(/\\b(to|the|my)\\b/gi,'').trim();const p=products.find(x=>x.name.toLowerCase()===term.toLowerCase())||products.find(x=>x.name.toLowerCase().includes(term.toLowerCase()));if(p){for(let i=0;i<qty;i++)add(p);setTab('pos');speak(qty+' '+p.name+' added');return}}
+  const matched=products.find(x=>q.includes(x.name.toLowerCase()));if(matched){add(matched);setTab('pos');speak(matched.name+' added');return}
+  speak('I heard '+raw+'. Try add a product, remove an item, clear cart, new sale, or complete sale.');
+ };
+ useEffect(()=>{const SR=(window as any).SpeechRecognition||(window as any).webkitSpeechRecognition;if(!SR)return;const r=new SR();r.continuous=true;r.interimResults=true;r.lang=navigator.language||'en-US';r.onresult=(e:any)=>{let final='';for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)final+=e.results[i][0].transcript;if(final)runVoice(final)};r.onend=()=>{if(voice)try{r.start()}catch{}};r.onerror=()=>{};recognition.current=r;return()=>{try{r.stop()}catch{}}},[voice,products,cart,sales]);
+ const toggleVoice=()=>{const r=recognition.current;if(!r){speak('Voice commands are not supported in this browser');return}if(voice){setVoice(false);try{r.stop()}catch{};speak('Voice control off')}else{setVoice(true);try{r.start()}catch{};speak('Voice control on')}};
  const save=(p:Product[])=>{setProducts(p);localStorage.setItem('rm_products',JSON.stringify(p))};
  const add=(p:Product)=>setCart(c=>{const x=c.find(i=>i.id===p.id);return x?c.map(i=>i.id===p.id?{...i,qty:i.qty+1}:i):[...c,{...p,qty:1}]});
  const subtotal=useMemo(()=>cart.reduce((s,i)=>s+i.price*i.qty,0),[cart]);const tax=subtotal*.05;const total=subtotal+tax;
@@ -23,12 +42,12 @@ export function App(){
    <div className="upgrade"><div className="spark">✦</div><b>Premium workspace</b><p>Fast billing. Beautiful receipts. Zero clutter.</p><button onClick={()=>setTab('settings')}>Explore features <ChevronRight size={15}/></button></div>
    <div className="side-foot">Local-first • Your data stays on this device</div>
   </aside>
-  <main><header><button className="hamb" onClick={()=>setMenu(true)}><Menu/></button><div><small>Good business starts with a great receipt.</small><h1>{tab==='dashboard'?'Overview':tab==='pos'?'New Sale':tab==='products'?'Products':tab==='history'?'Sales History':'Business Profile'}</h1></div><div className="head-actions"><span className="status"><i/> Offline ready</span><button className="avatar">{business.name.slice(0,1).toUpperCase()}</button></div></header>
+  <main><header><button className="hamb" onClick={()=>setMenu(true)}><Menu/></button><div><small>Good business starts with a great receipt.</small><h1>{tab==='dashboard'?'Overview':tab==='pos'?'New Sale':tab==='products'?'Products':tab==='history'?'Sales History':'Business Profile'}</h1></div><div className="head-actions"><button className={voice?'voice-btn listening':'voice-btn'} onClick={toggleVoice} title="Voice commands">{voice?<MicOff size={16}/>:<Mic size={16}/>}<span>{voice?'Listening':'Voice'}</span></button><span className="status"><i/> Offline ready</span><button className="avatar">{business.name.slice(0,1).toUpperCase()}</button></div></header>
   {tab==='dashboard'&&<Dashboard sales={sales} products={products} money={money} onNew={()=>setTab('pos')}/>}
   {tab==='pos'&&<POS products={filtered} query={query} setQuery={setQuery} add={add} cart={cart} setCart={setCart} subtotal={subtotal} tax={tax} total={total} customer={customer} setCustomer={setCustomer} complete={complete} business={business} money={money}/>}
   {tab==='products'&&<Products products={products} setProducts={save} editing={editing} setEditing={setEditing} money={money}/>}
   {tab==='history'&&<HistoryPage sales={sales} money={money} business={business}/>}
-  {tab==='settings'&&<SettingsPage business={business} setBusiness={(b:any)=>{setBusiness(b);localStorage.setItem('rm_business',JSON.stringify(b))}}/>}
+  {voice&&<div className="voice-bar"><Mic size={15}/><b>Listening for commands</b><span>{heard||'Try “add 2 chicken biryani” or “complete sale”'}</span><Volume2 size={15}/></div>}{tab==='settings'&&<SettingsPage business={business} setBusiness={(b:any)=>{setBusiness(b);localStorage.setItem('rm_business',JSON.stringify(b))}}/>}
   </main></div>
 }
 
