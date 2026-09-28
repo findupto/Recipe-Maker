@@ -41,6 +41,8 @@ public class NativeBridge {
     private final Set<String> discoveredAddresses = new HashSet<>();
     private volatile String lastPrinterAddress;
     private final Object printLock = new Object();
+    private final String[] voiceLanguages = new String[]{"en-PK","en-US","ur-PK"};
+    private int voiceLanguageIndex = 0;
 
     public NativeBridge(Activity activity, WebView web) {
         this.activity = activity;
@@ -449,10 +451,12 @@ public class NativeBridge {
             });
             Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-PK");
-            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-PK");
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, voiceLanguages[Math.min(voiceLanguageIndex, voiceLanguages.length - 1)]);
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, voiceLanguages[Math.min(voiceLanguageIndex, voiceLanguages.length - 1)]);
             i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
-            i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
+            i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 8);
+            i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1200);
+            i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 700);
             speechRecognizer.startListening(i);
     }
 
