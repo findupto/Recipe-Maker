@@ -5,7 +5,7 @@ type Item={id:string;name:string;price:number;qty:number};
 type Sale={id:string;date:string;items:Item[];total:number;customer:string;payment?:string;discount?:number};
 const seed:Product[]=[{id:'1',name:'Classic Burger',price:650,category:'Fast Food',stock:24},{id:'2',name:'Chicken Biryani',price:480,category:'Meals',stock:18},{id:'3',name:'French Fries',price:220,category:'Sides',stock:30},{id:'4',name:'Chicken Roll',price:320,category:'Fast Food',stock:16},{id:'5',name:'Fresh Lemonade',price:180,category:'Drinks',stock:22},{id:'6',name:'Mineral Water',price:80,category:'Drinks',stock:40}];
 const money=(n:number)=>'Rs '+n.toLocaleString('en-PK');
-const uid=()=>Math.random().toString(36).slice(2,9);const variantPrice=(p:Product,name?:string)=>{const v=p.variants?.find(x=>normalizeVoice(x.name)===normalizeVoice(name||''));return v?.price??p.price};
+const uid=()=>Math.random().toString(36).slice(2,9);
 
 export function App(){
  const [tab,setTab]=useState('dashboard');const [products,setProducts]=useState<Product[]>(()=>JSON.parse(localStorage.getItem('rm_products')||'null')||seed);
