@@ -283,8 +283,11 @@ public class NativeBridge {
                 }
                 public void onResults(android.os.Bundle results) {
                     ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                    if (matches != null && !matches.isEmpty())
-                        js("window.__nativeVoiceResult && window.__nativeVoiceResult(" + JSONObject.quote(matches.get(0)) + ");");
+                    if (matches != null && !matches.isEmpty()) {
+                        org.json.JSONArray choices = new org.json.JSONArray();
+                        for (String match : matches) choices.put(match);
+                        js("window.__nativeVoiceResult && window.__nativeVoiceResult(" + choices.toString() + ");");
+                    }
                     js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('done','');");
                     try { restartListening(); } catch (Exception ignored) {}
                 }
@@ -297,8 +300,8 @@ public class NativeBridge {
             });
             Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US");
-            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-US");
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-PK");
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-PK");
             i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
             i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
             speechRecognizer.startListening(i);
@@ -333,7 +336,7 @@ public class NativeBridge {
             if (speechRecognizer == null) return;
             Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US");
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-PK");
             i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
             i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
             speechRecognizer.startListening(i);
