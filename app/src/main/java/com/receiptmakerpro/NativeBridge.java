@@ -43,7 +43,7 @@ public class NativeBridge {
     private final Set<String> discoveredAddresses = new HashSet<>();
     private volatile String lastPrinterAddress;
     private final Object printLock = new Object();
-    private final String[] voiceLanguages = new String[]{"en-PK","en-US","ur-PK"};
+    private final String[] voiceLanguages = new String[]{"en-US","en-PK","ur-PK"};
     private int voiceLanguageIndex = 0;
     private int noMatchCount = 0;
     private boolean voiceActive = false;
@@ -454,6 +454,11 @@ public class NativeBridge {
                     } else if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
                         js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('processing','Voice engine busy — retrying…');");
                         scheduleRestart(900);
+                    } else if (error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED ||
+                               error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) {
+                        voiceLanguageIndex = (voiceLanguageIndex + 1) % voiceLanguages.length;
+                        js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('processing','Trying another speech language…');");
+                        scheduleRestart(300);
                     } else {
                         js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error'," + JSONObject.quote(errorText(error)) + ");");
                     }
