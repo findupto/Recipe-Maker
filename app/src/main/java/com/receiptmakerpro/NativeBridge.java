@@ -185,6 +185,29 @@ public class NativeBridge {
     }
 
     @JavascriptInterface
+    public void connectFirstPairedPrinter() {
+        try {
+            if (!btPermission()) {
+                requestBluetoothPermissions();
+                js("window.__printerStatus && window.__printerStatus('permission','Allow Bluetooth access, then try again.');");
+                return;
+            }
+            BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+            if (adapter == null || !adapter.isEnabled()) {
+                js("window.__printerStatus && window.__printerStatus('error','Bluetooth is turned off.');");
+                return;
+            }
+            for (BluetoothDevice d : adapter.getBondedDevices()) {
+                connectPrinter(d.getAddress());
+                return;
+            }
+            js("window.__printerStatus && window.__printerStatus('error','No paired Bluetooth printer found. Pair the printer first.');");
+        } catch (Exception e) {
+            js("window.__printerStatus && window.__printerStatus('error'," + JSONObject.quote(String.valueOf(e.getMessage())) + ");");
+        }
+    }
+
+    @JavascriptInterface
     public void disconnectPrinter() {
         closeSocket();
         js("window.__printerStatus && window.__printerStatus('disconnected','');");
