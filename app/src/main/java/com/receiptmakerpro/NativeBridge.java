@@ -229,16 +229,33 @@ public class NativeBridge {
                 }
                 JSONObject r = new JSONObject(receiptJson);
                 OutputStream out = socket.getOutputStream();
-
+                final int W = 48;
+                String theme = r.optString("receiptTheme", "modern").toLowerCase(java.util.Locale.US);
+                String footer = r.optString("footer", "Thank you for your business.");
                 StringBuilder text = new StringBuilder();
-                text.append(center(r.optString("business"))).append("\n");
-                text.append(center(r.optString("address"))).append("\n");
-                text.append(center(r.optString("phone"))).append("\n");
-                text.append("--------------------------------\n");
+
+                text.append("\u001B\u0040");
+                text.append(boldOn());
+                text.append(center(truncate(r.optString("business"), W))).append("\n");
+                text.append(boldOff());
+                if ("luxe".equals(theme) || "elegant".equals(theme)) {
+                    text.append(center("✦  PREMIUM RECEIPT  ✦")).append("\n");
+                } else if ("bold".equals(theme)) {
+                    text.append(center("RECEIPT")).append("\n");
+                }
+                if (!"minimal".equals(theme)) {
+                    text.append(center(truncate(r.optString("address"), W))).append("\n");
+                    text.append(center(truncate(r.optString("phone"), W))).append("\n");
+                }
+                text.append(separator(theme, W)).append("\n");
                 text.append("Receipt #").append(r.optString("id")).append("\n");
-                text.append(r.optString("date")).append("\n");
-                text.append("Customer: ").append(r.optString("customer")).append("\n");
-                text.append("--------------------------------\n");
+                text.append(truncate(r.optString("date"), W)).append("\n");
+                text.append("Customer: ").append(truncate(r.optString("customer"), W - 10)).append("\n");
+                text.append("Payment: ").append(r.optString("payment", "Cash")).append("\n");
+                text.append(separator(theme, W)).append("\n");
+                text.append(boldOn());
+                text.append(row("ITEM", "QTY", "AMOUNT", W)).append("\n");
+                text.append(boldOff());
 
                 JSONArray items = r.optJSONArray("items");
                 if (items != null) {
@@ -247,16 +264,28 @@ public class NativeBridge {
                         String name = item.optString("name");
                         int qty = item.optInt("qty", 1);
                         double price = item.optDouble("price", 0);
-                        text.append(name).append(" x").append(qty)
-                                .append("  ").append(String.format(java.util.Locale.US, "%.2f", price * qty)).append("\n");
+                        text.append(row(name, String.valueOf(qty),
+                                String.format(java.util.Locale.US, "%.2f", price * qty), W)).append("\n");
                     }
                 }
 
-                text.append("--------------------------------\n");
-                text.append("TOTAL: ").append(String.format(java.util.Locale.US, "%.2f", r.optDouble("total", 0))).append("\n");
-                text.append(center("Thank you!")).append("\n\n\n");
+                text.append(separator(theme, W)).append("\n");
+                double subtotal = r.optDouble("subtotal", r.optDouble("total", 0));
+                double discount = r.optDouble("discountAmount", 0);
+                double tax = r.optDouble("tax", 0);
+                double tip = r.optDouble("tipAmount", 0);
+                text.append(twoCol("Subtotal", String.format(java.util.Locale.US, "%.2f", subtotal), W)).append("\n");
+                if (discount > 0) text.append(twoCol("Discount", "-"+String.format(java.util.Locale.US, "%.2f", discount), W)).append("\n");
+                text.append(twoCol("Tax", String.format(java.util.Locale.US, "%.2f", tax), W)).append("\n");
+                if (tip > 0) text.append(twoCol("Tip", String.format(java.util.Locale.US, "%.2f", tip), W)).append("\n");
+                text.append(boldOn());
+                text.append(twoCol("TOTAL", String.format(java.util.Locale.US, "%.2f", r.optDouble("total", 0)), W)).append("\n");
+                text.append(boldOff());
+                text.append(separator(theme, W)).append("\n");
+                text.append("\n");
+                text.append(center(wrapFooter(footer, W))).append("\n");
+                text.append("\n\n\n");
 
-                out.write(new byte[]{0x1B, 0x40});
                 out.write(text.toString().getBytes(StandardCharsets.UTF_8));
                 out.write(new byte[]{0x1D, 0x56, 0x00});
                 out.flush();
@@ -267,9 +296,72 @@ public class NativeBridge {
         }).start();
     }
 
+
     private String center(String s) {
-        return s == null ? "" : s;
+        if (s == null) return "";
+        String[] lines = s.split("\\n");
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            String line = truncate(lines[i], 48);
+            int pad = Math.max(0, (48 - line.length()) / 2);
+            out.append(repeat(" ", pad)).append(line);
+            if (i < lines.length - 1) out.append("\n");
+        }
+        return out.toString();
     }
+
+    private String separator(String theme, int w) {
+        if ("luxe".equals(theme)) return repeat("═", w);
+        if ("elegant".equals(theme)) return repeat("·", w);
+        if ("bold".equals(theme)) return repeat("=", w);
+        if ("minimal".equals(theme)) return repeat("-", 24);
+        return repeat("-", w);
+    }
+
+    private String row(String name, String qty, String amount, int w) {
+        String q = truncate(qty, 4);
+        String a = truncate(amount, 12);
+        int nameW = Math.max(12, w - 4 - 12 - 2);
+        String n = truncate(name, nameW);
+        return padRight(n, nameW) + " " + padLeft(q, 4) + " " + padLeft(a, 12);
+    }
+
+    private String twoCol(String left, String right, int w) {
+        return padRight(truncate(left, Math.max(1, w - right.length() - 1)), Math.max(1, w - right.length() - 1)) + " " + right;
+    }
+
+    private String wrapFooter(String footer, int w) {
+        if (footer == null || footer.trim().isEmpty()) return "Thank you for your business.";
+        String s = footer.trim().replace("\n", " ");
+        return truncate(s, w);
+    }
+
+    private String truncate(String s, int max) {
+        if (s == null) return "";
+        s = s.replace("\n", " ").trim();
+        return s.length() <= max ? s : s.substring(0, Math.max(0, max - 1)) + "…";
+    }
+
+    private String padRight(String s, int n) {
+        StringBuilder b = new StringBuilder(s == null ? "" : s);
+        while (b.length() < n) b.append(' ');
+        return b.toString();
+    }
+
+    private String padLeft(String s, int n) {
+        String x = s == null ? "" : s;
+        if (x.length() >= n) return x.substring(x.length() - n);
+        return repeat(" ", n - x.length()) + x;
+    }
+
+    private String repeat(String s, int n) {
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < n; i++) b.append(s);
+        return b.toString();
+    }
+
+    private String boldOn() { return "\u001B\u0045\u0001"; }
+    private String boldOff() { return "\u001B\u0045\u0000"; }
 
     @JavascriptInterface
     public void startVoice() {
