@@ -204,7 +204,7 @@ public class NativeBridge {
                     if (matches != null && !matches.isEmpty())
                         js("window.__nativeVoiceResult && window.__nativeVoiceResult(" + JSONObject.quote(matches.get(0)) + ");");
                     js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('done','');");
-                    try { speechRecognizer.startListening(i); } catch (Exception ignored) {}
+                    try { restartListening(); } catch (Exception ignored) {}
                 }
                 public void onPartialResults(android.os.Bundle results) {
                     ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
