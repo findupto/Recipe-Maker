@@ -420,6 +420,7 @@ public class NativeBridge {
 
     private void startVoiceInternal() {
             if (voiceStarting) return;
+            stopVoiceInternal();
             voiceStarting = true;
             voiceActive = true;
             noMatchCount = 0;
@@ -429,7 +430,6 @@ public class NativeBridge {
                 js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error','No Android speech recognition service is installed or enabled. Install/enable Google Speech Services, then try again.');");
                 return;
             }
-            stopVoiceInternal();
             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(activity);
             speechRecognizer.setRecognitionListener(new RecognitionListener() {
                 public void onReadyForSpeech(android.os.Bundle b) { voiceStarting = false; lastVoiceStartMs = android.os.SystemClock.elapsedRealtime(); js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening','');"); }
