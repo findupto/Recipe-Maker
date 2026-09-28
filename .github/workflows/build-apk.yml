@@ -22,7 +22,7 @@ jobs:
 
       - name: Build web app
         run: |
-          npm ci
+          npm install
           npm run build
           rm -rf app/src/main/assets/www
           mkdir -p app/src/main/assets/www
