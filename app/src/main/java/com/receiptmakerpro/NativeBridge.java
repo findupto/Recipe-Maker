@@ -192,13 +192,19 @@ public class NativeBridge {
                 public void onBufferReceived(byte[] b) {}
                 public void onEndOfSpeech() { js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('processing','');"); }
                 public void onError(int error) {
-                    js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error'," + JSONObject.quote(errorText(error)) + ");");
+                    if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                        js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening','');");
+                        try { speechRecognizer.startListening(i); } catch (Exception ignored) {}
+                    } else {
+                        js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error'," + JSONObject.quote(errorText(error)) + ");");
+                    }
                 }
                 public void onResults(android.os.Bundle results) {
                     ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     if (matches != null && !matches.isEmpty())
                         js("window.__nativeVoiceResult && window.__nativeVoiceResult(" + JSONObject.quote(matches.get(0)) + ");");
                     js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('done','');");
+                    try { speechRecognizer.startListening(i); } catch (Exception ignored) {}
                 }
                 public void onPartialResults(android.os.Bundle results) {
                     ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
