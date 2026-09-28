@@ -10,6 +10,8 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Build;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
@@ -45,6 +47,9 @@ public class NativeBridge {
     private int voiceLanguageIndex = 0;
     private int noMatchCount = 0;
     private boolean voiceActive = false;
+    private boolean voiceStarting = false;
+    private final Handler voiceHandler = new Handler(Looper.getMainLooper());
+    private long lastVoiceStartMs = 0;
 
     public NativeBridge(Activity activity, WebView web) {
         this.activity = activity;
@@ -414,16 +419,20 @@ public class NativeBridge {
     }
 
     private void startVoiceInternal() {
+            if (voiceStarting) return;
+            voiceStarting = true;
             voiceActive = true;
             noMatchCount = 0;
             if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
-                js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error','Speech recognition is not available on this device');");
+                voiceStarting = false;
+                voiceActive = false;
+                js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error','No Android speech recognition service is installed or enabled. Install/enable Google Speech Services, then try again.');");
                 return;
             }
             stopVoiceInternal();
             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(activity);
             speechRecognizer.setRecognitionListener(new RecognitionListener() {
-                public void onReadyForSpeech(android.os.Bundle b) { js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening','');"); }
+                public void onReadyForSpeech(android.os.Bundle b) { voiceStarting = false; lastVoiceStartMs = android.os.SystemClock.elapsedRealtime(); js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening','');"); }
                 public void onBeginningOfSpeech() {}
                 public void onRmsChanged(float rms) {}
                 public void onBufferReceived(byte[] b) {}
@@ -431,7 +440,7 @@ public class NativeBridge {
                 public void onError(int error) {
                     if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                         js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening','');");
-                        try { restartListening(); } catch (Exception ignored) {}
+                        scheduleRestart(450);
                     } else if (error == 12) {
                         noMatchCount++;
                         if (noMatchCount >= 2) {
@@ -444,7 +453,7 @@ public class NativeBridge {
                         try { restartListening(); } catch (Exception ignored) {}
                     } else if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
                         js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('processing','Voice engine busy — retrying…');");
-                        try { activity.runOnUiThread(() -> { if (voiceActive) web.postDelayed(() -> restartListening(), 500); }); } catch (Exception ignored) {}
+                        scheduleRestart(900);
                     } else {
                         js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error'," + JSONObject.quote(errorText(error)) + ");");
                     }
@@ -458,7 +467,7 @@ public class NativeBridge {
                         js("window.__nativeVoiceResult && window.__nativeVoiceResult(" + choices.toString() + ");");
                     }
                     js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('done','');");
-                    try { restartListening(); } catch (Exception ignored) {}
+                    scheduleRestart(350);
                 }
                 public void onPartialResults(android.os.Bundle results) {
                     ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
@@ -475,7 +484,10 @@ public class NativeBridge {
             i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 8);
             i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1200);
             i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 700);
-            speechRecognizer.startListening(i);
+            try { speechRecognizer.startListening(i); } catch (Exception e) {
+                voiceStarting = false;
+                js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error'," + JSONObject.quote("Unable to start voice recognition: " + String.valueOf(e.getMessage())) + ");");
+            }
     }
 
     public void onPermissionResult(int requestCode, String[] permissions, int[] grantResults) {
@@ -495,7 +507,9 @@ public class NativeBridge {
 
     private void stopVoiceInternal() {
         voiceActive = false;
+        voiceStarting = false;
         noMatchCount = 0;
+        voiceHandler.removeCallbacksAndMessages(null);
         if (speechRecognizer != null) {
             try { speechRecognizer.stopListening(); } catch (Exception ignored) {}
             try { speechRecognizer.cancel(); } catch (Exception ignored) {}
@@ -504,9 +518,19 @@ public class NativeBridge {
         }
     }
 
+    private void scheduleRestart(long delayMs) {
+        voiceHandler.removeCallbacksAndMessages(null);
+        if (!voiceActive) return;
+        voiceHandler.postDelayed(this::restartListening, delayMs);
+    }
+
     private void restartListening() {
         try {
-            if (!voiceActive || speechRecognizer == null) return;
+            if (!voiceActive) return;
+            if (speechRecognizer == null || android.os.SystemClock.elapsedRealtime() - lastVoiceStartMs < 250) {
+                scheduleRestart(500);
+                return;
+            }
             Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, voiceLanguages[Math.min(voiceLanguageIndex, voiceLanguages.length - 1)]);
@@ -515,8 +539,10 @@ public class NativeBridge {
             i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 8);
             i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1200);
             i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 700);
-            speechRecognizer.startListening(i);
-        } catch (Exception ignored) {}
+            try { speechRecognizer.startListening(i); lastVoiceStartMs = android.os.SystemClock.elapsedRealtime(); } catch (Exception e) {
+                scheduleRestart(1000);
+            }
+        } catch (Exception ignored) { scheduleRestart(1000); }
     }
 
     private String errorText(int e) {
@@ -525,7 +551,9 @@ public class NativeBridge {
             case SpeechRecognizer.ERROR_CLIENT: return "Voice recognition client error";
             case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: return "Microphone permission denied";
             case SpeechRecognizer.ERROR_NETWORK:
-            case SpeechRecognizer.ERROR_NETWORK_TIMEOUT: return "Voice recognition network error";
+            case SpeechRecognizer.ERROR_NETWORK_TIMEOUT: return "Speech service network unavailable. Check internet or enable offline speech for your language.";
+            case SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED: return "This language is not supported by the installed speech service.";
+            case SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE: return "This language is temporarily unavailable. Trying the default language.";
             case SpeechRecognizer.ERROR_NO_MATCH: return "I could not understand that command";
             case SpeechRecognizer.ERROR_RECOGNIZER_BUSY: return "Voice recognition is busy";
             case SpeechRecognizer.ERROR_SERVER: return "Voice recognition server error";
