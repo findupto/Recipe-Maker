@@ -419,80 +419,121 @@ public class NativeBridge {
     }
 
     private void startVoiceInternal() {
-            if (voiceStarting) return;
-            stopVoiceInternal();
-            voiceStarting = true;
-            voiceActive = true;
-            noMatchCount = 0;
-            if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
-                voiceStarting = false;
-                voiceActive = false;
-                js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error','No Android speech recognition service is installed or enabled. Install/enable Google Speech Services, then try again.');");
-                return;
-            }
+        if (voiceStarting) return;
+        voiceHandler.removeCallbacksAndMessages(null);
+        voiceActive = true;
+        voiceStarting = true;
+        noMatchCount = 0;
+
+        if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
+            voiceStarting = false;
+            voiceActive = false;
+            js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error','No Android speech recognition service is available. Enable Google Speech Services or another speech service in Android settings.');");
+            return;
+        }
+
+        // Recreate the recognizer for every listening cycle. Some Android speech
+        // services leave a SpeechRecognizer instance in a stopped/busy state after
+        // onResults/onError; reusing it makes the voice button appear dead.
+        destroyRecognizerOnly();
+
+        try {
             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(activity);
             speechRecognizer.setRecognitionListener(new RecognitionListener() {
-                public void onReadyForSpeech(android.os.Bundle b) { voiceStarting = false; lastVoiceStartMs = android.os.SystemClock.elapsedRealtime(); js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening','');"); }
+                public void onReadyForSpeech(android.os.Bundle b) {
+                    voiceStarting = false;
+                    lastVoiceStartMs = android.os.SystemClock.elapsedRealtime();
+                    js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening','');");
+                }
                 public void onBeginningOfSpeech() {}
                 public void onRmsChanged(float rms) {}
                 public void onBufferReceived(byte[] b) {}
-                public void onEndOfSpeech() { js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('processing','');"); }
+                public void onEndOfSpeech() {
+                    js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('processing','');");
+                }
                 public void onError(int error) {
+                    if (!voiceActive) return;
+
+                    if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                        voiceActive = false;
+                        voiceStarting = false;
+                        js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error','Microphone permission is required for voice commands.');");
+                        return;
+                    }
+
+                    noMatchCount++;
+                    String message;
                     if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                        js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening','');");
-                        scheduleRestart(450);
-                    } else if (error == 12) {
-                        noMatchCount++;
-                        if (noMatchCount >= 2) {
-                            voiceLanguageIndex = (voiceLanguageIndex + 1) % voiceLanguages.length;
-                            noMatchCount = 0;
-                            js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening','Trying another speech language…');");
-                        } else {
-                            js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening','Please repeat…');");
-                        }
-                        try { restartListening(); } catch (Exception ignored) {}
+                        message = "Listening…";
                     } else if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
-                        js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('processing','Voice engine busy — retrying…');");
-                        scheduleRestart(900);
+                        message = "Voice engine busy — restarting…";
+                    } else if (error == SpeechRecognizer.ERROR_NETWORK || error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT) {
+                        message = "Speech service unavailable — retrying with offline preference…";
                     } else if (error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED ||
                                error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) {
                         voiceLanguageIndex = (voiceLanguageIndex + 1) % voiceLanguages.length;
-                        js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('processing','Trying another speech language…');");
-                        scheduleRestart(300);
+                        message = "Trying another speech language…";
                     } else {
-                        js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error'," + JSONObject.quote(errorText(error)) + ");");
+                        message = "Voice engine restarting…";
                     }
+
+                    js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening'," + JSONObject.quote(message) + ");");
+                    scheduleRestart(error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY ? 900 : 350);
                 }
                 public void onResults(android.os.Bundle results) {
+                    if (!voiceActive) return;
                     ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     if (matches != null && !matches.isEmpty()) {
                         noMatchCount = 0;
-                        org.json.JSONArray choices = new org.json.JSONArray();
+                        JSONArray choices = new JSONArray();
                         for (String match : matches) choices.put(match);
                         js("window.__nativeVoiceResult && window.__nativeVoiceResult(" + choices.toString() + ");");
                     }
-                    js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('done','');");
-                    scheduleRestart(350);
+                    js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('processing','');");
+                    scheduleRestart(250);
                 }
                 public void onPartialResults(android.os.Bundle results) {
+                    if (!voiceActive) return;
                     ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     if (matches != null && !matches.isEmpty())
                         js("window.__nativeVoicePartial && window.__nativeVoicePartial(" + JSONObject.quote(matches.get(0)) + ");");
                 }
                 public void onEvent(int t, android.os.Bundle b) {}
             });
-            Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, voiceLanguages[Math.min(voiceLanguageIndex, voiceLanguages.length - 1)]);
-            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, voiceLanguages[Math.min(voiceLanguageIndex, voiceLanguages.length - 1)]);
-            i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
-            i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 8);
-            i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1200);
-            i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 700);
-            try { speechRecognizer.startListening(i); } catch (Exception e) {
-                voiceStarting = false;
-                js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error'," + JSONObject.quote("Unable to start voice recognition: " + String.valueOf(e.getMessage())) + ");");
-            }
+
+            startRecognizerListening();
+        } catch (Exception e) {
+            voiceStarting = false;
+            destroyRecognizerOnly();
+            js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error'," +
+                    JSONObject.quote("Unable to start voice recognition: " + String.valueOf(e.getMessage())) + ");");
+            if (voiceActive) scheduleRestart(1200);
+        }
+    }
+
+    private void startRecognizerListening() {
+        if (!voiceActive || speechRecognizer == null) return;
+        Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, voiceLanguages[Math.min(voiceLanguageIndex, voiceLanguages.length - 1)]);
+        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, voiceLanguages[Math.min(voiceLanguageIndex, voiceLanguages.length - 1)]);
+        i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+        i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 8);
+        i.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
+        i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1200);
+        i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 700);
+        lastVoiceStartMs = android.os.SystemClock.elapsedRealtime();
+        speechRecognizer.startListening(i);
+    }
+
+    private void destroyRecognizerOnly() {
+        if (speechRecognizer != null) {
+            try { speechRecognizer.stopListening(); } catch (Exception ignored) {}
+            try { speechRecognizer.cancel(); } catch (Exception ignored) {}
+            try { speechRecognizer.destroy(); } catch (Exception ignored) {}
+            speechRecognizer = null;
+        }
+        voiceStarting = false;
     }
 
     public void onPermissionResult(int requestCode, String[] permissions, int[] grantResults) {
