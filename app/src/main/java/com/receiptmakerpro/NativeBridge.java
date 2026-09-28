@@ -39,6 +39,8 @@ public class NativeBridge {
     private SpeechRecognizer speechRecognizer;
     private BroadcastReceiver bluetoothReceiver;
     private final Set<String> discoveredAddresses = new HashSet<>();
+    private volatile String lastPrinterAddress;
+    private final Object printLock = new Object();
 
     public NativeBridge(Activity activity, WebView web) {
         this.activity = activity;
@@ -175,6 +177,7 @@ public class NativeBridge {
                 }
                 socket = candidate;
                 connectedDevice = device;
+                lastPrinterAddress = address;
                 String name = device.getName() == null ? address : device.getName();
                 js("window.__printerStatus && window.__printerStatus('connected'," + JSONObject.quote(name) + ");");
             } catch (Exception e) {
@@ -222,7 +225,13 @@ public class NativeBridge {
     @JavascriptInterface
     public void printReceipt(String receiptJson) {
         new Thread(() -> {
+            synchronized (printLock) {
             try {
+                if (socket == null || !socket.isConnected()) {
+                    if (lastPrinterAddress != null) {
+                        connectPrinterSync(lastPrinterAddress);
+                    }
+                }
                 if (socket == null || !socket.isConnected()) {
                     js("window.__printerStatus && window.__printerStatus('not_connected','');");
                     return;
@@ -236,21 +245,21 @@ public class NativeBridge {
 
                 text.append("\u001B\u0040");
                 text.append(boldOn());
-                text.append(center(truncate(r.optString("business"), W))).append("\n");
+                text.append(center(ascii(truncate(r.optString("business"), W)))).append("\n");
                 text.append(boldOff());
-                if ("luxe".equals(theme) || "elegant".equals(theme)) {
-                    text.append(center("✦  PREMIUM RECEIPT  ✦")).append("\n");
-                } else if ("bold".equals(theme)) {
+                if ("luxe".equals(theme) || "elegant".equals(theme) || "premium".equals(theme)) {
+                    text.append(center("*** PREMIUM RECEIPT ***")).append("\n");
+                } else if ("bold".equals(theme) || "classic".equals(theme)) {
                     text.append(center("RECEIPT")).append("\n");
                 }
                 if (!"minimal".equals(theme)) {
-                    text.append(center(truncate(r.optString("address"), W))).append("\n");
-                    text.append(center(truncate(r.optString("phone"), W))).append("\n");
+                    text.append(center(ascii(truncate(r.optString("address"), W)))).append("\n");
+                    text.append(center(ascii(truncate(r.optString("phone"), W)))).append("\n");
                 }
                 text.append(separator(theme, W)).append("\n");
                 text.append("Receipt #").append(r.optString("id")).append("\n");
-                text.append(truncate(r.optString("date"), W)).append("\n");
-                text.append("Customer: ").append(truncate(r.optString("customer"), W - 10)).append("\n");
+                text.append(ascii(truncate(r.optString("date"), W))).append("\n");
+                text.append("Customer: ").append(ascii(truncate(r.optString("customer"), W - 10))).append("\n");
                 text.append("Payment: ").append(r.optString("payment", "Cash")).append("\n");
                 text.append(separator(theme, W)).append("\n");
                 text.append(boldOn());
@@ -261,7 +270,7 @@ public class NativeBridge {
                 if (items != null) {
                     for (int i = 0; i < items.length(); i++) {
                         JSONObject item = items.getJSONObject(i);
-                        String name = item.optString("name");
+                        String name = ascii(item.optString("name"));
                         int qty = item.optInt("qty", 1);
                         double price = item.optDouble("price", 0);
                         text.append(row(name, String.valueOf(qty),
@@ -283,17 +292,42 @@ public class NativeBridge {
                 text.append(boldOff());
                 text.append(separator(theme, W)).append("\n");
                 text.append("\n");
-                text.append(center(wrapFooter(footer, W))).append("\n");
+                text.append(center(ascii(wrapFooter(footer, W)))).append("\n");
                 text.append("\n\n\n");
 
-                out.write(text.toString().getBytes(StandardCharsets.UTF_8));
+                out.write(text.toString().getBytes(StandardCharsets.US_ASCII));
                 out.write(new byte[]{0x1D, 0x56, 0x00});
                 out.flush();
                 js("window.__printerStatus && window.__printerStatus('printed','');");
             } catch (Exception e) {
+                closeSocket();
                 js("window.__printerStatus && window.__printerStatus('error'," + JSONObject.quote(String.valueOf(e.getMessage())) + ");");
             }
+            }
         }).start();
+    }
+
+    private void connectPrinterSync(String address) throws Exception {
+        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        if (adapter == null || !adapter.isEnabled()) throw new Exception("Bluetooth is turned off.");
+        adapter.cancelDiscovery();
+        BluetoothDevice device = adapter.getRemoteDevice(address);
+        try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+        BluetoothSocket candidate = device.createRfcommSocketToServiceRecord(SPP_UUID);
+        try { candidate.connect(); } catch (Exception first) {
+            try { candidate.close(); } catch (Exception ignored) {}
+            candidate = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
+            candidate.connect();
+        }
+        socket = candidate;
+        connectedDevice = device;
+        lastPrinterAddress = address;
+        js("window.__printerStatus && window.__printerStatus('connected'," + JSONObject.quote(device.getName() == null ? address : device.getName()) + ");");
+    }
+
+    private String ascii(String s) {
+        if (s == null) return "";
+        return s.replaceAll("[^\\x20-\\x7E]", "?");
     }
 
 
@@ -311,9 +345,9 @@ public class NativeBridge {
     }
 
     private String separator(String theme, int w) {
-        if ("luxe".equals(theme)) return repeat("═", w);
-        if ("elegant".equals(theme)) return repeat("·", w);
-        if ("bold".equals(theme)) return repeat("=", w);
+        if ("luxe".equals(theme) || "premium".equals(theme)) return repeat("=", w);
+        if ("elegant".equals(theme)) return repeat(".", w);
+        if ("bold".equals(theme) || "classic".equals(theme)) return repeat("=", w);
         if ("minimal".equals(theme)) return repeat("-", 24);
         return repeat("-", w);
     }
