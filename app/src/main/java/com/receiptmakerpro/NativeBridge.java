@@ -6,6 +6,9 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
 import android.content.Intent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.speech.RecognitionListener;
@@ -21,6 +24,8 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 public class NativeBridge {
@@ -32,6 +37,8 @@ public class NativeBridge {
     private BluetoothSocket socket;
     private BluetoothDevice connectedDevice;
     private SpeechRecognizer speechRecognizer;
+    private BroadcastReceiver bluetoothReceiver;
+    private final Set<String> discoveredAddresses = new HashSet<>();
 
     public NativeBridge(Activity activity, WebView web) {
         this.activity = activity;
@@ -84,6 +91,66 @@ public class NativeBridge {
     }
 
     @JavascriptInterface
+    public void discoverPrinters() {
+        activity.runOnUiThread(() -> {
+            if (Build.VERSION.SDK_INT >= 31 && (!btPermission() || !scanPermission())) {
+                requestBluetoothPermissions();
+                js("window.__printerStatus && window.__printerStatus('permission','Allow Bluetooth access, then tap Printer again.');");
+                return;
+            }
+            try {
+                BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+                if (adapter == null) { js("window.__printerStatus && window.__printerStatus('error','Bluetooth is not available on this device.');"); return; }
+                if (!adapter.isEnabled()) { js("window.__printerStatus && window.__printerStatus('error','Bluetooth is turned off.');"); openBluetoothSettings(); return; }
+                unregisterBluetoothReceiver();
+                discoveredAddresses.clear();
+                JSONArray initial = new JSONArray();
+                for (BluetoothDevice d : adapter.getBondedDevices()) { discoveredAddresses.add(d.getAddress()); initial.put(deviceJson(d)); }
+                js("window.__printerList && window.__printerList(" + initial.toString() + ");");
+                js("window.__printerStatus && window.__printerStatus('scanning','Searching for nearby Bluetooth devices…');");
+                bluetoothReceiver = new BroadcastReceiver() {
+                    @Override public void onReceive(Context context, Intent intent) {
+                        if (BluetoothDevice.ACTION_FOUND.equals(intent.getAction())) {
+                            BluetoothDevice d = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                            if (d != null && d.getAddress() != null && discoveredAddresses.add(d.getAddress())) {
+                                try { js("window.__printerFound && window.__printerFound(" + deviceJson(d).toString() + ");"); } catch (Exception ignored) {}
+                            }
+                        } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(intent.getAction())) {
+                            js("window.__printerStatus && window.__printerStatus('scan_complete','Bluetooth scan complete.');");
+                        }
+                    }
+                };
+                IntentFilter filter = new IntentFilter();
+                filter.addAction(BluetoothDevice.ACTION_FOUND);
+                filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
+                if (Build.VERSION.SDK_INT >= 33) activity.registerReceiver(bluetoothReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+                else activity.registerReceiver(bluetoothReceiver, filter);
+                adapter.cancelDiscovery();
+                adapter.startDiscovery();
+            } catch (SecurityException e) {
+                js("window.__printerStatus && window.__printerStatus('error','Bluetooth permission was denied.');");
+            } catch (Exception e) {
+                js("window.__printerStatus && window.__printerStatus('error'," + JSONObject.quote(String.valueOf(e.getMessage())) + ");");
+            }
+        });
+    }
+
+    private JSONObject deviceJson(BluetoothDevice d) throws Exception {
+        JSONObject x = new JSONObject();
+        x.put("name", d.getName() == null ? "Bluetooth printer" : d.getName());
+        x.put("address", d.getAddress());
+        x.put("paired", d.getBondState() == BluetoothDevice.BOND_BONDED);
+        return x;
+    }
+
+    private void unregisterBluetoothReceiver() {
+        if (bluetoothReceiver != null) {
+            try { activity.unregisterReceiver(bluetoothReceiver); } catch (Exception ignored) {}
+            bluetoothReceiver = null;
+        }
+    }
+
+    @JavascriptInterface
     public void openBluetoothSettings() {
         activity.startActivity(new Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS));
     }
@@ -99,9 +166,14 @@ public class NativeBridge {
                 BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
                 BluetoothDevice device = adapter.getRemoteDevice(address);
                 closeSocket();
-                socket = device.createRfcommSocketToServiceRecord(SPP_UUID);
                 adapter.cancelDiscovery();
-                socket.connect();
+                BluetoothSocket candidate = device.createRfcommSocketToServiceRecord(SPP_UUID);
+                try { candidate.connect(); } catch (Exception first) {
+                    try { candidate.close(); } catch (Exception ignored) {}
+                    candidate = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
+                    candidate.connect();
+                }
+                socket = candidate;
                 connectedDevice = device;
                 String name = device.getName() == null ? address : device.getName();
                 js("window.__printerStatus && window.__printerStatus('connected'," + JSONObject.quote(name) + ");");
@@ -179,6 +251,16 @@ public class NativeBridge {
     @JavascriptInterface
     public void startVoice() {
         activity.runOnUiThread(() -> {
+            if (Build.VERSION.SDK_INT >= 23 && activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                activity.requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 10);
+                js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('permission','Microphone permission requested.');");
+                return;
+            }
+            startVoiceInternal();
+        });
+    }
+
+    private void startVoiceInternal() {
             if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
                 js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error','Speech recognition is not available on this device');");
                 return;
@@ -220,7 +302,16 @@ public class NativeBridge {
             i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
             i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
             speechRecognizer.startListening(i);
-        });
+    }
+
+    public void onPermissionResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == 10) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) startVoiceInternal();
+            else js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error','Microphone permission was denied.');");
+        } else if (requestCode == 41) {
+            boolean granted = true; for (int r : grantResults) if (r != PackageManager.PERMISSION_GRANTED) granted = false;
+            js("window.__printerStatus && window.__printerStatus(" + JSONObject.quote(granted ? "permission_granted" : "error") + "," + JSONObject.quote(granted ? "Bluetooth permission granted — tap Printer again." : "Bluetooth permission was denied.") + ");");
+        }
     }
 
     @JavascriptInterface
@@ -266,6 +357,7 @@ public class NativeBridge {
 
     public void destroy() {
         stopVoiceInternal();
+        unregisterBluetoothReceiver();
         closeSocket();
     }
 }
