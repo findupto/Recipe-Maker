@@ -46,7 +46,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Receipt-Maker-Pro-debug-apk
+          name: Receipt-Maker-Pro-v1.3-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
@@ -55,5 +55,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v1.1.${{ github.run_number }}"
-          gh release create "$TAG" app/build/outputs/apk/debug/app-debug.apk --title "Receipt Maker Pro $TAG" --notes "Automated APK build from main." --prerelease
+          TAG="v1.3.${{ github.run_number }}"
+          cp app/build/outputs/apk/debug/app-debug.apk Receipt-Maker-Pro.apk
+sha256sum Receipt-Maker-Pro.apk > Receipt-Maker-Pro.apk.sha256
+gh release create "$TAG" Receipt-Maker-Pro.apk Receipt-Maker-Pro.apk.sha256 --title "Receipt Maker Pro $TAG" --notes "Professional Android build from main. Includes resilient voice-engine recovery and lifecycle handling."
