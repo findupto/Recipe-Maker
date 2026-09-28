@@ -546,6 +546,13 @@ public class NativeBridge {
         }
     }
 
+    public void onHostResume() {
+        if (voiceActive) {
+            js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('processing','Resuming voice engine…');");
+            scheduleRestart(250);
+        }
+    }
+
     @JavascriptInterface
     public void stopVoice() {
         activity.runOnUiThread(this::stopVoiceInternal);
