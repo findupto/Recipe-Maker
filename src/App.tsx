@@ -42,7 +42,7 @@ export function App(){
         if(m){qtyRaw=m[1];name=m[2]}
         else{
           m=x.match(new RegExp("^(.+?)\\s+(?:at|@|for|price|rate)\\s*("+token+")$","i"));
-          if(m){name=m[1];priceRaw=m[2]} else name=x;
+          if(m){name=m[1];priceRaw=m[2]} else {m=x.match(new RegExp("^(.+?)\\s+("+token+")$","i"));if(m){name=m[1];priceRaw=m[2]} else name=x;}
         }
       }
     }
