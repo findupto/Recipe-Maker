@@ -462,7 +462,7 @@ public class NativeBridge {
             else js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error','Microphone permission was denied.');");
         } else if (requestCode == 41) {
             boolean granted = true; for (int r : grantResults) if (r != PackageManager.PERMISSION_GRANTED) granted = false;
-            js("window.__printerStatus && window.__printerStatus(" + JSONObject.quote(granted ? "permission_granted" : "error") + "," + JSONObject.quote(granted ? "Bluetooth permission granted — tap Printer again." : "Bluetooth permission was denied.") + ");");
+            if (granted) { js("window.__printerStatus && window.__printerStatus('permission_granted','Bluetooth permission granted. Scanning printers…');"); discoverPrinters(); } else { js("window.__printerStatus && window.__printerStatus('error','Bluetooth permission was denied.');"); }
         }
     }
 
