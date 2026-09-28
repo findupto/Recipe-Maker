@@ -194,7 +194,7 @@ public class NativeBridge {
                 public void onError(int error) {
                     if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                         js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening','');");
-                        try { speechRecognizer.startListening(i); } catch (Exception ignored) {}
+                        try { restartListening(); } catch (Exception ignored) {}
                     } else {
                         js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error'," + JSONObject.quote(errorText(error)) + ");");
                     }
@@ -235,6 +235,18 @@ public class NativeBridge {
             speechRecognizer.destroy();
             speechRecognizer = null;
         }
+    }
+
+    private void restartListening() {
+        try {
+            if (speechRecognizer == null) return;
+            Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US");
+            i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+            i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
+            speechRecognizer.startListening(i);
+        } catch (Exception ignored) {}
     }
 
     private String errorText(int e) {
