@@ -43,6 +43,8 @@ public class NativeBridge {
     private final Object printLock = new Object();
     private final String[] voiceLanguages = new String[]{"en-PK","en-US","ur-PK"};
     private int voiceLanguageIndex = 0;
+    private int noMatchCount = 0;
+    private boolean voiceActive = false;
 
     public NativeBridge(Activity activity, WebView web) {
         this.activity = activity;
@@ -412,6 +414,8 @@ public class NativeBridge {
     }
 
     private void startVoiceInternal() {
+            voiceActive = true;
+            noMatchCount = 0;
             if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
                 js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error','Speech recognition is not available on this device');");
                 return;
@@ -429,9 +433,18 @@ public class NativeBridge {
                         js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening','');");
                         try { restartListening(); } catch (Exception ignored) {}
                     } else if (error == 12) {
-                        voiceLanguageIndex = (voiceLanguageIndex + 1) % voiceLanguages.length;
-                        js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening','Switching voice language…');");
+                        noMatchCount++;
+                        if (noMatchCount >= 2) {
+                            voiceLanguageIndex = (voiceLanguageIndex + 1) % voiceLanguages.length;
+                            noMatchCount = 0;
+                            js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening','Trying another speech language…');");
+                        } else {
+                            js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening','Please repeat…');");
+                        }
                         try { restartListening(); } catch (Exception ignored) {}
+                    } else if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
+                        js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('processing','Voice engine busy — retrying…');");
+                        try { activity.runOnUiThread(() -> { if (voiceActive) web.postDelayed(() -> restartListening(), 500); }); } catch (Exception ignored) {}
                     } else {
                         js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error'," + JSONObject.quote(errorText(error)) + ");");
                     }
@@ -439,6 +452,7 @@ public class NativeBridge {
                 public void onResults(android.os.Bundle results) {
                     ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     if (matches != null && !matches.isEmpty()) {
+                        noMatchCount = 0;
                         org.json.JSONArray choices = new org.json.JSONArray();
                         for (String match : matches) choices.put(match);
                         js("window.__nativeVoiceResult && window.__nativeVoiceResult(" + choices.toString() + ");");
@@ -480,6 +494,8 @@ public class NativeBridge {
     }
 
     private void stopVoiceInternal() {
+        voiceActive = false;
+        noMatchCount = 0;
         if (speechRecognizer != null) {
             try { speechRecognizer.stopListening(); } catch (Exception ignored) {}
             try { speechRecognizer.cancel(); } catch (Exception ignored) {}
@@ -490,7 +506,7 @@ public class NativeBridge {
 
     private void restartListening() {
         try {
-            if (speechRecognizer == null) return;
+            if (!voiceActive || speechRecognizer == null) return;
             Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, voiceLanguages[Math.min(voiceLanguageIndex, voiceLanguages.length - 1)]);
