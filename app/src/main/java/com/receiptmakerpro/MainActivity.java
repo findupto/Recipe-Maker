@@ -81,6 +81,12 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (nativeBridge != null) nativeBridge.onHostResume();
+    }
+
+    @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (nativeBridge != null) nativeBridge.onPermissionResult(requestCode, permissions, grantResults);
