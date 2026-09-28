@@ -9,15 +9,15 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
-import android.webkit.WebViewClient;
 import android.content.pm.PackageManager;
+import android.webkit.JavascriptInterface;
 
-import androidx.annotation.Nullable;
 import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewClientCompat;
 
 public class MainActivity extends Activity {
     private WebView web;
+    private NativeBridge nativeBridge;
 
     @Override
     public void onCreate(Bundle b) {
@@ -42,8 +42,7 @@ public class MainActivity extends Activity {
 
         web.setWebViewClient(new WebViewClientCompat() {
             @Override
-            public WebResourceResponse shouldInterceptRequest(
-                    WebView view, WebResourceRequest request) {
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 return assetLoader.shouldInterceptRequest(request.getUrl());
             }
 
@@ -52,8 +51,10 @@ public class MainActivity extends Activity {
             public WebResourceResponse shouldInterceptRequest(WebView view, String url) {
                 return assetLoader.shouldInterceptRequest(android.net.Uri.parse(url));
             }
-
         });
+
+        nativeBridge = new NativeBridge(this, web);
+        web.addJavascriptInterface(nativeBridge, "ReceiptMakerAndroid");
 
         web.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -66,15 +67,11 @@ public class MainActivity extends Activity {
                             break;
                         }
                     }
-
                     if (audioRequested &&
-                            checkSelfPermission(Manifest.permission.RECORD_AUDIO)
-                                    != PackageManager.PERMISSION_GRANTED) {
-                        requestPermissions(
-                                new String[]{Manifest.permission.RECORD_AUDIO}, 10);
+                            checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                        requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 10);
                         return;
                     }
-
                     r.grant(r.getResources());
                 });
             }
@@ -85,15 +82,13 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (web != null && web.canGoBack()) {
-            web.goBack();
-        } else {
-            super.onBackPressed();
-        }
+        if (web != null && web.canGoBack()) web.goBack();
+        else super.onBackPressed();
     }
 
     @Override
     protected void onDestroy() {
+        if (nativeBridge != null) nativeBridge.destroy();
         if (web != null) {
             web.loadUrl("about:blank");
             web.stopLoading();
