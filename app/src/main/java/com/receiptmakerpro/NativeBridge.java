@@ -493,9 +493,12 @@ public class NativeBridge {
             if (speechRecognizer == null) return;
             Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-PK");
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, voiceLanguages[Math.min(voiceLanguageIndex, voiceLanguages.length - 1)]);
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, voiceLanguages[Math.min(voiceLanguageIndex, voiceLanguages.length - 1)]);
             i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
-            i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
+            i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 8);
+            i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1200);
+            i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 700);
             speechRecognizer.startListening(i);
         } catch (Exception ignored) {}
     }
