@@ -428,6 +428,10 @@ public class NativeBridge {
                     if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                         js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening','');");
                         try { restartListening(); } catch (Exception ignored) {}
+                    } else if (error == 12) {
+                        voiceLanguageIndex = (voiceLanguageIndex + 1) % voiceLanguages.length;
+                        js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('listening','Switching voice language…');");
+                        try { restartListening(); } catch (Exception ignored) {}
                     } else {
                         js("window.__nativeVoiceStatus && window.__nativeVoiceStatus('error'," + JSONObject.quote(errorText(error)) + ");");
                     }
